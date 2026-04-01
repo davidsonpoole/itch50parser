@@ -1,0 +1,51 @@
+# Compiled binaries
+itch
+main
+*.o
+*.a
+*.so
+*.dylib
+
+# Build directories
+build/
+out/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Data files
+data
+*.gz
+
+# Profiling output
+*.json
+gmon.out
+perf.data
+perf.data.old
+*.prof
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# clangd / LSP
+.cache/
+compile_commands.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
