@@ -1,66 +1,47 @@
 #include <_stdio.h>
 #include <chrono>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <cstdint>
 #include <cstring>
 #include <arpa/inet.h>
 #include <memory>
 #include <unordered_map>
+#include <fcntl.h>
+#include <unistd.h>
 #include "main.h"
 
 class ItchMessageParser {
-private:
-    ItchSystemEventMessage system_event;
-    ItchStockDirectoryMessage stock_dir;
-    ItchAddOrderMessage add_order;
-    ItchAddOrderAttrMessage add_order_attr;
-    ItchOrderExecutedMessage order_executed;
-    ItchOrderExecutedPriceMessage order_executed_price;
-    ItchCancelOrderMessage cancel_order;
-    ItchDeleteOrderMessage delete_order;
-    ItchOrderReplaceMessage order_replace;
-
 public:
     void parse(char *buf) {
         char msg_type = buf[0];
         switch (msg_type) {
             case 'S':
-                memcpy(&system_event, buf+1, sizeof(system_event));
-                on_system_event(system_event);
+                on_system_event(reinterpret_cast<ItchSystemEventMessage*>(buf+1));
                 break;
             case 'R':
-                memcpy(&stock_dir, buf+1, sizeof(stock_dir));
-                on_stock_dir(stock_dir);
+                on_stock_dir(reinterpret_cast<ItchStockDirectoryMessage*>(buf+1));
                 break;
             case 'A':
-                memcpy(&add_order, buf + 1, sizeof(add_order));
-                on_add(add_order);
+                on_add(reinterpret_cast<ItchAddOrderMessage*>(buf+1));
                 break;
             case 'F':
-                memcpy(&add_order_attr, buf + 1, sizeof(add_order_attr));
-                on_add_attr(add_order_attr);
+                on_add_attr(reinterpret_cast<ItchAddOrderAttrMessage*>(buf+1));
                 break;
             case 'E':
-                memcpy(&order_executed, buf+1, sizeof(order_executed));
-                on_executed(order_executed);
+                on_executed(reinterpret_cast<ItchOrderExecutedMessage*>(buf+1));
                 break;
             case 'C':
-                memcpy(&order_executed_price, buf+1, sizeof(order_executed_price));
-                on_executed_price(order_executed_price);
+                on_executed_price(reinterpret_cast<ItchOrderExecutedPriceMessage*>(buf+1));
                 break;
             case 'X':
-                memcpy(&cancel_order, buf+1, sizeof(cancel_order));
-                on_cancel(cancel_order);
+                on_cancel(reinterpret_cast<ItchCancelOrderMessage*>(buf+1));
                 break;
             case 'D':
-                memcpy(&delete_order, buf+1, sizeof(delete_order));
-                on_delete(delete_order);
+                on_delete(reinterpret_cast<ItchDeleteOrderMessage*>(buf+1));
                 break;
             case 'U':
-                memcpy(&order_replace, buf+1, sizeof(order_replace));
-                on_replace(order_replace);
+                on_replace(reinterpret_cast<ItchOrderReplaceMessage*>(buf+1));
                 break;
 
             default:
@@ -87,8 +68,8 @@ uint64_t parse_timestamp(const char ts[6]) {
     return ntohll(val);
 }
 
-void on_system_event(ItchSystemEventMessage &msg) {
-    switch (msg.event) {
+void on_system_event(ItchSystemEventMessage* msg) {
+    switch (msg->event) {
         case 'O':
             std::cout << "Start of messages" << std::endl;
             break;
@@ -110,10 +91,10 @@ void on_system_event(ItchSystemEventMessage &msg) {
     }
 }
 
-void on_stock_dir(ItchStockDirectoryMessage& msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
-    stock->market = msg.market;
-    memcpy(stock->name, msg.stock, 8);
+void on_stock_dir(ItchStockDirectoryMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
+    stock->market = msg->market;
+    memcpy(stock->name, msg->stock, 8);
 };
 
 Order* add_order(StockImpl* stock, price_t price, uint32_t shares, uint64_t ref_num, char side) {
@@ -132,7 +113,7 @@ Order* add_order(StockImpl* stock, price_t price, uint32_t shares, uint64_t ref_
     g_total_order_count++;
 
     if (g_total_order_count % 100000 == 0) {
-        std::cout << g_total_order_count << std::endl;
+        std::cout << g_total_order_count << '\n';
     }
 
     // if (g_order_count == 100000) {
@@ -151,92 +132,92 @@ void remove_order(Order* o) {
     g_open_orders--;
 }
 
-void on_add(ItchAddOrderMessage& msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_add(ItchAddOrderMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    add_order(stock, ntohl(msg.price), ntohl(msg.shares), ntohll(msg.order_ref_num), msg.side);
+    add_order(stock, ntohl(msg->price), ntohl(msg->shares), ntohll(msg->order_ref_num), msg->side);
 
     // std::cout << std::endl;
-    // std::cout << "Locate: " << ntohs(msg.stock_locate) << std::endl;
-    // std::cout << "Tracking Num: " << ntohs(msg.tracking_num) << std::endl;
-    // std::cout << "Timestamp: " << parse_timestamp(msg.timestamp) << std::endl;
-    // std::cout << "Order Ref Num: " << ntohll(msg.order_ref_num) << std::endl;
-    // std::cout << "Side: " << msg.side << std::endl;
-    // std::cout << "Shares: " << ntohl(msg.shares) << std::endl;
-    // std::cout << "Stock: " << std::string(msg.stock, 8) << std::endl;
-    // std::cout << "Price: " << ntohl(msg.price) << std::endl;
+    // std::cout << "Locate: " << ntohs(msg->stock_locate) << std::endl;
+    // std::cout << "Tracking Num: " << ntohs(msg->tracking_num) << std::endl;
+    // std::cout << "Timestamp: " << parse_timestamp(msg->timestamp) << std::endl;
+    // std::cout << "Order Ref Num: " << ntohll(msg->order_ref_num) << std::endl;
+    // std::cout << "Side: " << msg->side << std::endl;
+    // std::cout << "Shares: " << ntohl(msg->shares) << std::endl;
+    // std::cout << "Stock: " << std::string(msg->stock, 8) << std::endl;
+    // std::cout << "Price: " << ntohl(msg->price) << std::endl;
 };
 
-void on_add_attr(ItchAddOrderAttrMessage &msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_add_attr(ItchAddOrderAttrMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    add_order(stock, ntohl(msg.price), ntohl(msg.shares), ntohll(msg.order_ref_num), msg.side);
+    add_order(stock, ntohl(msg->price), ntohl(msg->shares), ntohll(msg->order_ref_num), msg->side);
 }
 
-void on_executed(ItchOrderExecutedMessage &msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_executed(ItchOrderExecutedMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    Order *o = g_orders_by_ref_num[ntohll(msg.order_ref_num)].get();
+    Order *o = g_orders_by_ref_num[ntohll(msg->order_ref_num)].get();
     if (o == nullptr) {
         std::cerr << "Order is null" << std::endl;
         return;
     }
-    o->shares -= ntohl(msg.executed_shares);
+    o->shares -= ntohl(msg->executed_shares);
     if (o->shares == 0) {
         // remove order
         remove_order(o);
     }
 }
 
-void on_executed_price(ItchOrderExecutedPriceMessage &msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_executed_price(ItchOrderExecutedPriceMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    Order *o = g_orders_by_ref_num[ntohll(msg.order_ref_num)].get();
+    Order *o = g_orders_by_ref_num[ntohll(msg->order_ref_num)].get();
     if (o == nullptr) {
         std::cerr << "Order is null" << std::endl;
         return;
     }
-    o->shares -= ntohl(msg.executed_shares);
+    o->shares -= ntohl(msg->executed_shares);
     if (o->shares == 0) {
         // remove order
         remove_order(o);
     }
 }
 
-void on_cancel(ItchCancelOrderMessage& msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_cancel(ItchCancelOrderMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    Order *o = g_orders_by_ref_num[ntohll(msg.order_ref_num)].get();
+    Order *o = g_orders_by_ref_num[ntohll(msg->order_ref_num)].get();
     if (o == nullptr) {
         std::cerr << "Order is null" << std::endl;
         return;
     }
-    o->shares -= ntohl(msg.cancelled_shares);
+    o->shares -= ntohl(msg->cancelled_shares);
     if (o->shares == 0) {
         // remove order
         remove_order(o);
@@ -244,8 +225,8 @@ void on_cancel(ItchCancelOrderMessage& msg) {
 
 }
 
-void on_delete(ItchDeleteOrderMessage &msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_delete(ItchDeleteOrderMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
@@ -253,7 +234,7 @@ void on_delete(ItchDeleteOrderMessage &msg) {
     }
     //std::cout << "Order delete for stock " << std::string(stock->name, 8) << std::endl;
 
-    Order *o = g_orders_by_ref_num[ntohll(msg.order_ref_num)].get();
+    Order *o = g_orders_by_ref_num[ntohll(msg->order_ref_num)].get();
     if (o == nullptr) {
         std::cerr << "Order is null" << std::endl;
         return;
@@ -261,15 +242,15 @@ void on_delete(ItchDeleteOrderMessage &msg) {
     remove_order(o);
 }
 
-void on_replace(ItchOrderReplaceMessage &msg) {
-    StockImpl *stock = g_stocks[ntohs(msg.stock_locate)].get();
+void on_replace(ItchOrderReplaceMessage* msg) {
+    StockImpl *stock = g_stocks[ntohs(msg->stock_locate)].get();
     if (g_filter) {
         if (memcmp(stock->name, "AAPL    ", 8) != 0) {
             return;
         }
     }
 
-    Order *old = g_orders_by_ref_num[ntohll(msg.orig_order_ref_num)].get();
+    Order *old = g_orders_by_ref_num[ntohll(msg->orig_order_ref_num)].get();
     if (old == nullptr) {
         std::cerr << "Old order is null" << std::endl;
         return;
@@ -279,7 +260,7 @@ void on_replace(ItchOrderReplaceMessage &msg) {
 
     remove_order(old);
 
-    add_order(stock, ntohl(msg.price), ntohl(msg.shares), ntohll(msg.new_order_ref_num), side);
+    add_order(stock, ntohl(msg->price), ntohl(msg->shares), ntohll(msg->new_order_ref_num), side);
 
 }
 
@@ -296,21 +277,40 @@ int main() {
         alloc.delete_object(o);
     }
 
-    std::ifstream file("data/01302019.NASDAQ_ITCH50", std::ios::binary);
+    constexpr size_t BUF_SIZE = 256 * 1024;
+    alignas(64) char buf[BUF_SIZE];
 
-    uint16_t msg_len;
-    char buf[1024];
+    int fd = open("data/01302019.NASDAQ_ITCH50", O_RDONLY);
+    if (fd < 0) {
+        std::cerr << "Failed to open file" << std::endl;
+        return 1;
+    }
 
     ItchMessageParser parser;
 
     // start timer
     g_start = std::chrono::high_resolution_clock::now();
 
-    while (file.read(reinterpret_cast<char*>(&msg_len), 2)) {
-        msg_len = ntohs(msg_len);
-        file.read(buf, msg_len);
-        parser.parse(buf);
+    size_t remaining = 0;
+    for (;;) {
+        ssize_t bytes_read = read(fd, buf + remaining, BUF_SIZE - remaining);
+        if (bytes_read <= 0) break;
+        size_t avail = remaining + bytes_read;
+        size_t pos = 0;
+        while (pos + 2 <= avail) {
+            uint16_t msg_len = ntohs(*reinterpret_cast<const uint16_t*>(buf + pos));
+            if (pos + 2 + msg_len > avail) break;
+            pos += 2;
+            parser.parse(buf + pos);
+            pos += msg_len;
+        }
+        remaining = avail - pos;
+        if (remaining > 0) {
+            memmove(buf, buf + pos, remaining);
+        }
     }
+
+    close(fd);
 
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - g_start);
